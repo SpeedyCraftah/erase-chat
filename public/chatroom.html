@@ -1,0 +1,146 @@
+<html>
+    <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300&display=swap" rel="stylesheet">
+        <style>
+            p, h1, h2, h3, span {
+                font-family: 'Roboto', sans-serif;
+            }
+        </style>
+        <title>SpeedyErase</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin: 0; padding: 0">
+        <div style="display: flex; align-items: center; flex-direction: column; width: 100%; height: 100%;">
+            <div id="timer-div" style="visibility:hidden; box-sizing: border-box; padding: 5px;text-align: center; position: sticky; background-color: #f74d40; width: 100%;">
+                <span id="timer" style="color:black;">Automatic erasal in: 200 seconds</span>
+            </div>
+            <br />
+            <div>
+                <button onclick="window.location.href = '/'">Exit chatroom</button>
+                <button id="erase" style="color: red;">Erase chatroom</button>
+            </div>
+            <br />
+            <div id="chat" style="display:flex; flex-direction:column; row-gap: 10px; overflow: scroll; padding-top: 10px; padding-left: 10px; background-color: #ebebeb; width: 90%; height: 82%; border-style: solid; border-width: 2px; border-radius: 5px; border-color: white;">
+            </div>
+            <textarea id="message" style="width: 91%;" placeholder="Type your message here"></textarea>
+        </div>
+    </body>
+
+    <script>
+        const chatElement = document.getElementById("chat");
+        chatElement.appendChild(document.createElement("br"));
+        function sendMessage(username, message, usernameColour, messageColour) {
+            chatElement.removeChild(chatElement.lastChild);
+
+            const container = document.createElement("div");
+            container.style.display = "flex";
+            container.style.flexDirection = "row";
+
+            const name = document.createElement("span");
+            name.style.fontWeight = "bolder";
+            if (messageColour !== undefined) name.style.color = usernameColour;
+            name.innerText = `${username}: `;
+            container.appendChild(name);
+
+            const messageDiv = document.createElement("div");
+            messageDiv.style.paddingLeft = "5px";
+            messageDiv.style.display = "inline-block";
+            container.appendChild(messageDiv);
+
+            // Construct the message.
+            message = message.trim().split("\n");
+
+            for (let i = 0; i < message.length; i++) {
+                const line = message[i];
+
+                const messageLine = document.createElement("span");
+                if (messageColour !== undefined) messageLine.style.color = messageColour;
+                messageLine.innerText = line;
+                messageDiv.appendChild(messageLine);
+
+                if (i !== message.length - 1) {
+                    const breakLine = document.createElement("br");
+                    messageDiv.appendChild(breakLine);
+                }
+            }
+
+            chatElement.appendChild(container);
+            chatElement.appendChild(document.createElement("br"));
+        }
+
+        const path = window.location.href.split("?code=")[1];
+        const code = path[path.length - 1] === '/' ? path.slice(0, -1) : path;
+
+        const ws = new WebSocket("wss://localhost:8080/api/chatroom?code=" + code);
+
+        ws.addEventListener("open", event => {
+            const messageElement = document.getElementById("message");
+            messageElement.addEventListener("keypress", event => {
+                if (event.key === "Enter") {
+                    const content = messageElement.value;
+                    if (content.length === 0) {
+                        event.preventDefault();
+                        return;
+                    }
+
+                    if (event.shiftKey) return;
+
+                    ws.send(JSON.stringify({
+                        o: 2,
+                        d: content
+                    }));
+
+                    messageElement.value = "";
+                    event.preventDefault();
+                }
+            });
+        });
+
+        const messagesElement = document.getElementById("chat");
+
+        ws.addEventListener("message", event => {
+            const data = JSON.parse(event.data);
+
+            // Populate messages.
+            if (data.o === 1) {
+                const messages = data.d.messages;
+                const eraseAt = data.d.erase_at;
+                for (let i = 0; i < messages.length; i++) {
+                    const message = messages[i];
+                    sendMessage(message.author, message.content, message.usernameColour, message.messageColour);
+                }
+
+                if (eraseAt) {
+                    document.getElementById("timer").innerText =
+                            `Automatic erasal in: ${Math.floor((eraseAt - Date.now()) / 1000)} seconds`;
+                    document.getElementById("timer-div").style.visibility = "visible";
+                    
+                    setInterval(() => {
+                        if (Date.now() > eraseAt) return;
+                        document.getElementById("timer").innerText =
+                            `Automatic erasal in: ${Math.floor((eraseAt - Date.now()) / 1000)} seconds`;
+                    }, 1000);
+                }
+            // Message sent.
+            } else if (data.o === 2) {
+                const message = data.d;
+                const oldScrollTop = messagesElement.scrollTop;
+                sendMessage(message.author, message.content, message.usernameColour, message.messageColour);
+                
+                messagesElement.scrollTop = messagesElement.scrollHeight;
+            }
+        });
+
+        ws.addEventListener("close", () => {
+            document.location.replace("/");
+        });
+
+        document.getElementById("erase").addEventListener("click", () => {
+            ws.send(JSON.stringify({
+                o: 3
+            }));
+        });
+    </script>
+</html>
